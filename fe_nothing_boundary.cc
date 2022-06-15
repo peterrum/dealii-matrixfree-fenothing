@@ -35,12 +35,11 @@ const double x_cutoff = 0.5;
 
 namespace
 {
-  template <int dim, typename Number>
+  template <int dim, typename Number, typename VectorizedArrayType>
   void
   determine_internal_boundary_faces(
-    std::vector<std::bitset<dealii::VectorizedArray<Number>::size()>>
-                                          &selectedFaces,
-    const dealii::MatrixFree<dim, Number> &data,
+    std::vector<std::bitset<VectorizedArrayType::size()>> &     selectedFaces,
+    const dealii::MatrixFree<dim, Number, VectorizedArrayType> &data,
     const std::function<
       bool(const typename dealii::DoFHandler<dim>::cell_iterator &,
            unsigned int)> &predicate)
@@ -95,17 +94,18 @@ template <int dim>
 class LaplaceOperator
 {
 public:
-  using Number = typename VectorType::value_type;
+  using Number              = typename VectorType::value_type;
+  using VectorizedArrayType = VectorizedArray<Number, 1>;
 
   /**
    * Encapsulates Laplace with Neumann boundary conditions applied to one side.
    */
-  LaplaceOperator(const DoFHandler<dim>           &dof_handler,
+  LaplaceOperator(const DoFHandler<dim> &          dof_handler,
                   const AffineConstraints<Number> &constraints,
-                  const Quadrature<dim>           &quadrature)
+                  const Quadrature<dim> &          quadrature)
     : constraints(constraints)
   {
-    typename MatrixFree<dim, Number>::AdditionalData data;
+    typename MatrixFree<dim, Number, VectorizedArrayType>::AdditionalData data;
     data.mapping_update_flags                = update_values | update_gradients;
     data.mapping_update_flags_boundary_faces = update_JxW_values;
     data.mapping_update_flags_inner_faces    = update_JxW_values;
@@ -150,15 +150,17 @@ public:
   }
 
 private:
-  using FECellIntegrator = FEEvaluation<dim, -1, 0, 1, Number>;
-  using FEFaceIntegrator = FEFaceEvaluation<dim, -1, 0, 1, Number>;
+  using FECellIntegrator =
+    FEEvaluation<dim, -1, 0, 1, Number, VectorizedArrayType>;
+  using FEFaceIntegrator =
+    FEFaceEvaluation<dim, -1, 0, 1, Number, VectorizedArrayType>;
 
   void
   do_cell_integral_range(
-    const MatrixFree<dim, Number>               &data,
-    VectorType                                  &dst,
-    const VectorType                            &src,
-    const std::pair<unsigned int, unsigned int> &range) const
+    const MatrixFree<dim, Number, VectorizedArrayType> &data,
+    VectorType &                                        dst,
+    const VectorType &                                  src,
+    const std::pair<unsigned int, unsigned int> &       range) const
   {
     if (data.get_cell_range_category(range) == fe_nothing_index)
       return;
@@ -180,13 +182,11 @@ private:
 
   void
   do_face_integral_range(
-    const MatrixFree<dim, Number>               &data,
-    VectorType                                  &dst,
-    const VectorType                            &src,
-    const std::pair<unsigned int, unsigned int> &range) const
+    const MatrixFree<dim, Number, VectorizedArrayType> &data,
+    VectorType &                                        dst,
+    const VectorType &                                  src,
+    const std::pair<unsigned int, unsigned int> &       range) const
   {
-    return;
-
     FEFaceIntegrator integrator_i(data, true);
     FEFaceIntegrator integrator_e(data, false);
     for (unsigned face = range.first; face < range.second; ++face)
@@ -211,28 +211,31 @@ private:
 
         integrator.reinit(face);
 
-        integrator.gather_evaluate(src, EvaluationFlags::values);
+        integrator.read_dof_values(src);
+        integrator.evaluate(EvaluationFlags::values);
+
         for (unsigned int q = 0; q < integrator.n_q_points; ++q)
           {
-            integrator.submit_value(-make_vectorized_array(neumann_constant),
-                                    q);
+            integrator.submit_value(
+              -make_vectorized_array<VectorizedArrayType>(neumann_constant), q);
           }
-        integrator.integrate_scatter(EvaluationFlags::values, dst);
+        integrator.integrate(EvaluationFlags::values);
+        integrator.distribute_local_to_global(dst);
       }
   }
 
   void
   do_boundary_integral_range(
-    const MatrixFree<dim, Number>               &data,
-    VectorType                                  &dst,
-    const VectorType                            &src,
-    const std::pair<unsigned int, unsigned int> &range) const
+    const MatrixFree<dim, Number, VectorizedArrayType> &data,
+    VectorType &                                        dst,
+    const VectorType &                                  src,
+    const std::pair<unsigned int, unsigned int> &       range) const
   {
     FEFaceIntegrator integrator(data, true);
 
     for (unsigned face = range.first; face < range.second; ++face)
       {
-        if (data.get_boundary_id(face) == 1)
+        if (data.get_boundary_id(face) == 0) // should be left face?
           {
             std::cout << data.get_face_category(face).first << ","
                       << data.get_face_category(face).second << std::endl;
@@ -244,17 +247,18 @@ private:
             for (unsigned int q = 0; q < integrator.n_q_points; ++q)
               {
                 integrator.submit_value(
-                  -make_vectorized_array(neumann_constant), q);
+                  -make_vectorized_array<VectorizedArrayType>(neumann_constant),
+                  q);
               }
             integrator.integrate_scatter(EvaluationFlags::values, dst);
           }
       }
   }
 
-  MatrixFree<dim, Number>          matrix_free;
-  const AffineConstraints<Number> &constraints;
+  MatrixFree<dim, Number, VectorizedArrayType> matrix_free;
+  const AffineConstraints<Number> &            constraints;
 
-  std::vector<std::bitset<dealii::VectorizedArray<Number>::size()>>
+  std::vector<std::bitset<VectorizedArrayType::size()>>
     internal_boundary_face_mask;
 
   const double scaling          = 1.0;
