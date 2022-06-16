@@ -109,11 +109,8 @@ public:
     data.mapping_update_flags                = update_values | update_gradients;
     data.mapping_update_flags_boundary_faces = update_JxW_values;
     data.mapping_update_flags_inner_faces    = update_JxW_values;
-    matrix_free.reinit(MappingQ1<dim>(),
-                       dof_handler,
-                       constraints,
-                       hp::QCollection<dim>{quadrature, quadrature},
-                       data);
+    matrix_free.reinit(
+      MappingQ1<dim>(), dof_handler, constraints, quadrature, data);
 
     determine_internal_boundary_faces(
       internal_boundary_face_mask, matrix_free, [](auto &cell, unsigned face) {
