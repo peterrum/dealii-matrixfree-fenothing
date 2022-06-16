@@ -87,13 +87,8 @@ test(const unsigned int n_refinements)
     std::cout << std::endl;
   };
 
-  const auto ebd_cell_operation =
-    [&](const auto &matrix_free, auto &, auto &, const auto range) {
-      const auto category = matrix_free.get_cell_range_category(range);
-
-      if (category != MatrixFreeTools::BirthAndDeath::fe_index_valid)
-        return;
-
+  const auto cell_operation =
+    [&](const auto &matrix_free, auto &, const auto &, const auto range) {
       std::cout << "cell:" << std::endl;
 
       FECellIntegrator phi(matrix_free);
@@ -108,8 +103,42 @@ test(const unsigned int n_refinements)
         }
     };
 
+  const auto face_operation =
+    [&](const auto &, auto &, const auto &, const auto) {
+      // nothing to do here but in the DG case
+    };
+
+  const auto boundary_operation = [&](const auto &matrix_free,
+                                      auto &,
+                                      const auto &,
+                                      const auto range,
+                                      const bool is_interior_face) {
+    std::cout << "face:" << std::endl;
+
+    FEFaceIntegrator phi(matrix_free, is_interior_face);
+
+    for (unsigned int face = range.first; face < range.second; ++face)
+      {
+        phi.reinit(face);
+
+        for (const auto q : phi.quadrature_point_indices())
+          print_points(phi.quadrature_point(q),
+                       matrix_free.n_active_entries_per_face_batch(face));
+      }
+  };
+
+  const auto ebd_cell_operation =
+    [&](const auto &matrix_free, auto &dst, const auto &src, const auto range) {
+      const auto category = matrix_free.get_cell_range_category(range);
+
+      if (category != MatrixFreeTools::BirthAndDeath::fe_index_valid)
+        return;
+
+      cell_operation(matrix_free, dst, src, range);
+    };
+
   const auto ebd_internal_or_boundary_face_operation =
-    [&](const auto &matrix_free, auto &, auto &, const auto range) {
+    [&](const auto &matrix_free, auto &dst, const auto &src, const auto range) {
       const auto category = matrix_free.get_face_range_category(range);
 
       const unsigned int type =
@@ -119,26 +148,14 @@ test(const unsigned int n_refinements)
           category.second == MatrixFreeTools::BirthAndDeath::fe_index_valid);
 
       if (type == 1) // boundary face
-        {
-          std::cout << "face:" << std::endl;
-
-          FEFaceIntegrator phi(
-            matrix_free,
-            category.first == MatrixFreeTools::BirthAndDeath::fe_index_valid);
-
-          for (unsigned int face = range.first; face < range.second; ++face)
-            {
-              phi.reinit(face);
-
-              for (const auto q : phi.quadrature_point_indices())
-                print_points(phi.quadrature_point(q),
-                             matrix_free.n_active_entries_per_face_batch(face));
-            }
-        }
+        boundary_operation(matrix_free,
+                           dst,
+                           src,
+                           range,
+                           category.first ==
+                             MatrixFreeTools::BirthAndDeath::fe_index_valid);
       else if (type == 2) // internal face
-        {
-          // nothing to do here but in the DG case
-        }
+        face_operation(matrix_free, dst, src, range);
     };
 
   matrix_free.template cell_loop<VectorType, VectorType>(ebd_cell_operation,
