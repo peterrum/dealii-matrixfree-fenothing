@@ -20,9 +20,36 @@ namespace dealii
       static constexpr unsigned int fe_index_valid   = 0;
       static constexpr unsigned int fe_index_nothing = 1;
 
-      void
-      cell_loop()
-      {}
+      template <typename VectorTypeOut,
+                typename VectorTypeIn,
+                int dim,
+                typename Number,
+                typename VectorizedArrayType>
+      static void
+      cell_loop(const MatrixFree<dim, Number, VectorizedArrayType> &matrix_free,
+                const std::function<void(
+                  const MatrixFree<dim, Number, VectorizedArrayType> &,
+                  VectorTypeOut &,
+                  const VectorTypeIn &,
+                  const std::pair<unsigned int, unsigned int>)> &cell_operation,
+                VectorTypeOut &                                  dst,
+                const VectorTypeIn &                             src)
+      {
+        const auto ebd_cell_operation = [&](const auto &matrix_free,
+                                            auto &      dst,
+                                            const auto &src,
+                                            const auto  range) {
+          const auto category = matrix_free.get_cell_range_category(range);
+
+          if (category != MatrixFreeTools::BirthAndDeath::fe_index_valid)
+            return;
+
+          cell_operation(matrix_free, dst, src, range);
+        };
+
+        matrix_free.template cell_loop<VectorTypeOut, VectorTypeIn>(
+          ebd_cell_operation, dst, src);
+      }
 
       void
       loop()
@@ -158,9 +185,13 @@ test(const unsigned int n_refinements)
         face_operation(matrix_free, dst, src, range);
     };
 
-  matrix_free.template cell_loop<VectorType, VectorType>(ebd_cell_operation,
-                                                         dst,
-                                                         src);
+
+  MatrixFreeTools::BirthAndDeath::template cell_loop<VectorType,
+                                                     VectorType,
+                                                     dim,
+                                                     Number,
+                                                     VectorizedArrayType>(
+    matrix_free, cell_operation, dst, src);
   std::cout << std::endl;
   matrix_free.template loop<VectorType, VectorType>(
     ebd_cell_operation,
