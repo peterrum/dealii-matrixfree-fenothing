@@ -13,6 +13,16 @@ constexpr unsigned int fe_index_nothing = 1;
 
 using namespace dealii;
 
+namespace dealii
+{
+  namespace MatrixFreeTools
+  {
+    void
+    element_birth_and_death()
+    {}
+  } // namespace MatrixFreeTools
+} // namespace dealii
+
 template <int dim>
 void
 test(const unsigned int n_refinements)
@@ -68,7 +78,7 @@ test(const unsigned int n_refinements)
     std::cout << std::endl;
   };
 
-  const auto cell_operation =
+  const auto ebd_cell_operation =
     [&](const auto &matrix_free, auto &, auto &, const auto range) {
       const auto category = matrix_free.get_cell_range_category(range);
 
@@ -89,7 +99,7 @@ test(const unsigned int n_refinements)
         }
     };
 
-  const auto face_operation =
+  const auto ebd_internal_or_boundary_face_operation =
     [&](const auto &matrix_free, auto &, auto &, const auto range) {
       const auto category = matrix_free.get_face_range_category(range);
 
@@ -118,12 +128,16 @@ test(const unsigned int n_refinements)
         }
     };
 
-  matrix_free.template cell_loop<VectorType, VectorType>(cell_operation,
+  matrix_free.template cell_loop<VectorType, VectorType>(ebd_cell_operation,
                                                          dst,
                                                          src);
   std::cout << std::endl;
   matrix_free.template loop<VectorType, VectorType>(
-    cell_operation, face_operation, face_operation, dst, src);
+    ebd_cell_operation,
+    ebd_internal_or_boundary_face_operation,
+    ebd_internal_or_boundary_face_operation,
+    dst,
+    src);
 }
 
 int
