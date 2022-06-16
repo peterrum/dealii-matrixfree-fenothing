@@ -95,7 +95,7 @@ class LaplaceOperator
 {
 public:
   using Number              = typename VectorType::value_type;
-  using VectorizedArrayType = VectorizedArray<Number, 1>;
+  using VectorizedArrayType = VectorizedArray<Number>;
 
   /**
    * Encapsulates Laplace with Neumann boundary conditions applied to one side.
