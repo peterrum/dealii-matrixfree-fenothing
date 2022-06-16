@@ -8,18 +8,26 @@
 #include <deal.II/matrix_free/fe_evaluation.h>
 #include <deal.II/matrix_free/matrix_free.h>
 
-constexpr unsigned int fe_index_valid   = 0;
-constexpr unsigned int fe_index_nothing = 1;
-
 using namespace dealii;
 
 namespace dealii
 {
   namespace MatrixFreeTools
   {
-    void
-    element_birth_and_death()
-    {}
+    class BirthAndDeath
+    {
+    public:
+      static constexpr unsigned int fe_index_valid   = 0;
+      static constexpr unsigned int fe_index_nothing = 1;
+
+      void
+      cell_loop()
+      {}
+
+      void
+      loop()
+      {}
+    };
   } // namespace MatrixFreeTools
 } // namespace dealii
 
@@ -43,9 +51,10 @@ test(const unsigned int n_refinements)
 
   for (const auto &cell : dof_handler.active_cell_iterators())
     if (cell->center()[1] < 0.5)
-      cell->set_active_fe_index(fe_index_valid);
+      cell->set_active_fe_index(MatrixFreeTools::BirthAndDeath::fe_index_valid);
     else
-      cell->set_active_fe_index(fe_index_nothing);
+      cell->set_active_fe_index(
+        MatrixFreeTools::BirthAndDeath::fe_index_nothing);
 
   dof_handler.distribute_dofs(
     hp::FECollection<dim>(FE_Q<dim>(1), FE_Nothing<dim>(1)));
@@ -82,7 +91,7 @@ test(const unsigned int n_refinements)
     [&](const auto &matrix_free, auto &, auto &, const auto range) {
       const auto category = matrix_free.get_cell_range_category(range);
 
-      if (category != fe_index_valid)
+      if (category != MatrixFreeTools::BirthAndDeath::fe_index_valid)
         return;
 
       std::cout << "cell:" << std::endl;
@@ -104,14 +113,18 @@ test(const unsigned int n_refinements)
       const auto category = matrix_free.get_face_range_category(range);
 
       const unsigned int type =
-        static_cast<unsigned int>(category.first == fe_index_valid) +
-        static_cast<unsigned int>(category.second == fe_index_valid);
+        static_cast<unsigned int>(
+          category.first == MatrixFreeTools::BirthAndDeath::fe_index_valid) +
+        static_cast<unsigned int>(
+          category.second == MatrixFreeTools::BirthAndDeath::fe_index_valid);
 
       if (type == 1) // boundary face
         {
           std::cout << "face:" << std::endl;
 
-          FEFaceIntegrator phi(matrix_free, category.first == fe_index_valid);
+          FEFaceIntegrator phi(
+            matrix_free,
+            category.first == MatrixFreeTools::BirthAndDeath::fe_index_valid);
 
           for (unsigned int face = range.first; face < range.second; ++face)
             {
