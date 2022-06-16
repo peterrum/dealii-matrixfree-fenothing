@@ -51,9 +51,80 @@ namespace dealii
           ebd_cell_operation, dst, src);
       }
 
-      void
-      loop()
-      {}
+
+
+      template <typename VectorTypeOut,
+                typename VectorTypeIn,
+                int dim,
+                typename Number,
+                typename VectorizedArrayType>
+      static void
+      loop(const MatrixFree<dim, Number, VectorizedArrayType> &matrix_free,
+           const std::function<
+             void(const MatrixFree<dim, Number, VectorizedArrayType> &,
+                  VectorTypeOut &,
+                  const VectorTypeIn &,
+                  const std::pair<unsigned int, unsigned int>)> &cell_operation,
+           const std::function<
+             void(const MatrixFree<dim, Number, VectorizedArrayType> &,
+                  VectorTypeOut &,
+                  const VectorTypeIn &,
+                  const std::pair<unsigned int, unsigned int>)> &face_operation,
+           const std::function<
+             void(const MatrixFree<dim, Number, VectorizedArrayType> &,
+                  VectorTypeOut &,
+                  const VectorTypeIn &,
+                  const std::pair<unsigned int, unsigned int>,
+                  const bool)> &boundary_operation,
+           VectorTypeOut &      dst,
+           const VectorTypeIn & src)
+      {
+        const auto ebd_cell_operation = [&](const auto &matrix_free,
+                                            auto &      dst,
+                                            const auto &src,
+                                            const auto  range) {
+          const auto category = matrix_free.get_cell_range_category(range);
+
+          if (category != MatrixFreeTools::BirthAndDeath::fe_index_valid)
+            return;
+
+          cell_operation(matrix_free, dst, src, range);
+        };
+
+        const auto ebd_internal_or_boundary_face_operation =
+          [&](const auto &matrix_free,
+              auto &      dst,
+              const auto &src,
+              const auto  range) {
+            const auto category = matrix_free.get_face_range_category(range);
+
+            const unsigned int type =
+              static_cast<unsigned int>(
+                category.first ==
+                MatrixFreeTools::BirthAndDeath::fe_index_valid) +
+              static_cast<unsigned int>(
+                category.second ==
+                MatrixFreeTools::BirthAndDeath::fe_index_valid);
+
+            if (type == 1) // boundary face
+              boundary_operation(
+                matrix_free,
+                dst,
+                src,
+                range,
+                category.first ==
+                  MatrixFreeTools::BirthAndDeath::fe_index_valid);
+            else if (type == 2) // internal face
+              face_operation(matrix_free, dst, src, range);
+          };
+
+        matrix_free.template loop<VectorTypeOut, VectorTypeIn>(
+          ebd_cell_operation,
+          ebd_internal_or_boundary_face_operation,
+          ebd_internal_or_boundary_face_operation,
+          dst,
+          src);
+      }
     };
   } // namespace MatrixFreeTools
 } // namespace dealii
@@ -154,51 +225,23 @@ test(const unsigned int n_refinements)
       }
   };
 
-  const auto ebd_cell_operation =
-    [&](const auto &matrix_free, auto &dst, const auto &src, const auto range) {
-      const auto category = matrix_free.get_cell_range_category(range);
-
-      if (category != MatrixFreeTools::BirthAndDeath::fe_index_valid)
-        return;
-
-      cell_operation(matrix_free, dst, src, range);
-    };
-
-  const auto ebd_internal_or_boundary_face_operation =
-    [&](const auto &matrix_free, auto &dst, const auto &src, const auto range) {
-      const auto category = matrix_free.get_face_range_category(range);
-
-      const unsigned int type =
-        static_cast<unsigned int>(
-          category.first == MatrixFreeTools::BirthAndDeath::fe_index_valid) +
-        static_cast<unsigned int>(
-          category.second == MatrixFreeTools::BirthAndDeath::fe_index_valid);
-
-      if (type == 1) // boundary face
-        boundary_operation(matrix_free,
-                           dst,
-                           src,
-                           range,
-                           category.first ==
-                             MatrixFreeTools::BirthAndDeath::fe_index_valid);
-      else if (type == 2) // internal face
-        face_operation(matrix_free, dst, src, range);
-    };
-
-
   MatrixFreeTools::BirthAndDeath::template cell_loop<VectorType,
                                                      VectorType,
                                                      dim,
                                                      Number,
                                                      VectorizedArrayType>(
     matrix_free, cell_operation, dst, src);
+
   std::cout << std::endl;
-  matrix_free.template loop<VectorType, VectorType>(
-    ebd_cell_operation,
-    ebd_internal_or_boundary_face_operation,
-    ebd_internal_or_boundary_face_operation,
-    dst,
-    src);
+
+  MatrixFreeTools::BirthAndDeath::
+    template loop<VectorType, VectorType, dim, Number, VectorizedArrayType>(
+      matrix_free,
+      cell_operation,
+      face_operation,
+      boundary_operation,
+      dst,
+      src);
 }
 
 int
