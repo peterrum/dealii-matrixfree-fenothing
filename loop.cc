@@ -93,22 +93,28 @@ test(const unsigned int n_refinements)
     [&](const auto &matrix_free, auto &, auto &, const auto range) {
       const auto category = matrix_free.get_face_range_category(range);
 
-      if (static_cast<unsigned int>(category.first == fe_index_valid) +
-            static_cast<unsigned int>(category.second == fe_index_valid) !=
-          1)
-        return;
+      const unsigned int type =
+        static_cast<unsigned int>(category.first == fe_index_valid) +
+        static_cast<unsigned int>(category.second == fe_index_valid);
 
-      std::cout << "face:" << std::endl;
-
-      FEFaceIntegrator phi(matrix_free, category.first == fe_index_valid);
-
-      for (unsigned int face = range.first; face < range.second; ++face)
+      if (type == 1) // boundary face
         {
-          phi.reinit(face);
+          std::cout << "face:" << std::endl;
 
-          for (const auto q : phi.quadrature_point_indices())
-            print_points(phi.quadrature_point(q),
-                         matrix_free.n_active_entries_per_face_batch(face));
+          FEFaceIntegrator phi(matrix_free, category.first == fe_index_valid);
+
+          for (unsigned int face = range.first; face < range.second; ++face)
+            {
+              phi.reinit(face);
+
+              for (const auto q : phi.quadrature_point_indices())
+                print_points(phi.quadrature_point(q),
+                             matrix_free.n_active_entries_per_face_batch(face));
+            }
+        }
+      else if (type == 2) // internal face
+        {
+          // nothing to do here but in the DG case
         }
     };
 
