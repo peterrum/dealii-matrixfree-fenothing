@@ -3,10 +3,12 @@
 #include <deal.II/fe/fe_nothing.h>
 #include <deal.II/fe/fe_q.h>
 
+#include <deal.II/grid/filtered_iterator.h>
 #include <deal.II/grid/grid_generator.h>
 
 #include <deal.II/matrix_free/fe_evaluation.h>
 #include <deal.II/matrix_free/matrix_free.h>
+
 
 using namespace dealii;
 
@@ -135,30 +137,50 @@ test(const unsigned int n_refinements)
 {
   using Number              = double;
   using VectorizedArrayType = VectorizedArray<Number>;
-  using VectorType          = Vector<Number>;
+  using VectorType          = LinearAlgebra::distributed::Vector<Number>;
   using FECellIntegrator =
     FEEvaluation<dim, -1, 0, 1, Number, VectorizedArrayType>;
   using FEFaceIntegrator =
     FEFaceEvaluation<dim, -1, 0, 1, Number, VectorizedArrayType>;
 
-  Triangulation<dim> tria;
-  GridGenerator::hyper_cube(tria);
-  tria.refine_global(n_refinements);
+  parallel::distributed::Triangulation<dim> tria(MPI_COMM_WORLD);
+  GridGenerator::subdivided_hyper_rectangle(tria,
+                                            {2, 1, 3},
+                                            {0, 0, 0},
+                                            {0.1, 0.1, 0.15});
+
+  for (unsigned int i = 0; i < n_refinements; ++i)
+    {
+      for (const auto &cell : tria.active_cell_iterators())
+        {
+          // Cells in powder layer
+          if (cell->center()[2] > 0.05)
+            {
+              cell->set_refine_flag();
+            }
+        }
+      tria.execute_coarsening_and_refinement();
+    }
 
   DoFHandler<dim> dof_handler(tria);
 
-  for (const auto &cell : dof_handler.active_cell_iterators())
-    if (cell->center()[1] < 0.5)
-      cell->set_active_fe_index(MatrixFreeTools::BirthAndDeath::fe_index_valid);
-    else
-      cell->set_active_fe_index(
-        MatrixFreeTools::BirthAndDeath::fe_index_nothing);
+  for (const auto &cell : filter_iterators(dof_handler.active_cell_iterators(),
+                                           IteratorFilters::LocallyOwnedCell()))
+    {
+      if (cell->center()[2] < 0.1)
+        cell->set_active_fe_index(
+          MatrixFreeTools::BirthAndDeath::fe_index_valid);
+      else
+        cell->set_active_fe_index(
+          MatrixFreeTools::BirthAndDeath::fe_index_nothing);
+    }
 
   dof_handler.distribute_dofs(
     hp::FECollection<dim>(FE_Q<dim>(1), FE_Nothing<dim>(1)));
 
   typename MatrixFree<dim, Number, VectorizedArrayType>::AdditionalData data;
-  data.mapping_update_flags                = update_quadrature_points;
+  data.tasks_parallel_scheme = MatrixFree<dim, double>::AdditionalData::none;
+  data.mapping_update_flags  = update_quadrature_points;
   data.mapping_update_flags_boundary_faces = update_quadrature_points;
   data.mapping_update_flags_inner_faces    = update_quadrature_points;
 
@@ -245,7 +267,9 @@ test(const unsigned int n_refinements)
 }
 
 int
-main()
+main(int argc, char **argv)
 {
-  test<2>(1);
+  Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
+
+  test<3>(2);
 }
